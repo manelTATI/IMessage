@@ -4,7 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "node --watch src/server.js"
+    "build": "node -e \"const fs=require('fs'); fs.rmSync('dist',{recursive:true,force:true}); fs.cpSync('src','dist',{recursive:true})\"",
+    "dev": "node --watch src/server.js",
+    "start":"node src/index.js"
   },
   "keywords": [],
   "author": "",
