@@ -6,6 +6,7 @@ import fs from "fs";
 import path from "path";
 import User from './models/user.model.js'
 import { clerkMiddleware } from '@clerk/express'
+import job from "./lib/cron.js";
 console.log("MONGO_URI:", process.env.MONGO_URI);
 
 const app = express();
@@ -39,7 +40,7 @@ app.listen(port, () => {
     console.log(`Server is running on port ${port}`);
 
     if (process.env.NODE_ENV === "production") {
-        job.start();  
+        jobb.start();  
     }
 });
 export default app; 
