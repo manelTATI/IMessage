@@ -1,54 +1,107 @@
+```js
 import express from "express";
 import User from "../models/user.model.js";
-import {verifyWebhook} from "@clerk/backend/webhooks"
+import { verifyWebhook } from "@clerk/backend/webhooks";
 
-const router = express.Router()
+const router = express.Router();
 
 router.post("/", async (req, res) => {
     try {
+        console.log(" CLERK WEBHOOK RECEIVED");
+
         const signingSecret = process.env.CLERK_WEBHOOK_SINGING_SECRET;
+
         if (!signingSecret) {
-            res.status(503).json({ message: "Webhook secret is not provided" });
-            return;
+            console.error(" Webhook secret is missing");
+            return res.status(503).json({
+                message: "Webhook secret is not provided",
+            });
         }
-        //clerk's verifier expects a web Request with the raw body; express.raw gives a Buffer.
-        const playload = Buffer.isBuffer(req.body) ? req.body.toString("utf8") : String(req.body);
-        const request = new Request("http://internal/webhooks/clerk", {
-            method: "POST",
-            headers: new Headers(req.headers),
-            body: playload,
-        
+
+        // Clerk needs the raw request body for signature verification
+        const payload = Buffer.isBuffer(req.body)
+            ? req.body.toString("utf8")
+            : String(req.body);
+
+        const request = new Request(
+            "http://internal/webhooks/clerk",
+            {
+                method: "POST",
+                headers: new Headers(req.headers),
+                body: payload,
+            }
+        );
+
+        // Verify Clerk webhook signature
+        const evt = await verifyWebhook(request, {
+            signingSecret,
         });
-        //throws if the signature is wrong or the body was tampered with; only then do we trust evt.
-        const evt = await verifyWebhook(request, { signingSecret });
 
-        if (evt.type === "user.created" || evt.type === "user.updated") {
+        console.log("✅ Clerk webhook verified:", evt.type);
+
+        if (
+            evt.type === "user.created" ||
+            evt.type === "user.updated"
+        ) {
             const u = evt.data;
-            const email = u.email_addresses?.find(
-                (e) => e.id === u.primary_email_address_id
-            )?.email_addresses ?? u.email_addresses?.[0]?.email_address;
-            console.log(email);
+
+            const email =
+                u.email_addresses?.find(
+                    (e) => e.id === u.primary_email_address_id
+                )?.email_address ??
+                u.email_addresses?.[0]?.email_address;
+
             const fullName =
-                [u.first_name, u.last_name].filter(boolean).join("") ||
-                u.username || email?.split("@")[0];
+                [u.first_name, u.last_name]
+                    .filter(Boolean)
+                    .join(" ") ||
+                u.username ||
+                email?.split("@")[0];
+
+            console.log("Clerk ID:", u.id);
+            console.log("Email:", email);
+            console.log("Full name:", fullName);
+
             await User.findOneAndUpdate(
-                { clerkId: id },
-                { clerkId: u.id, email, fullName, profilePic: u.image_url },
-                { new: true, upsert: true, setDefaultsOnInsert: true },
-            
-            
+                { clerkId: u.id },
+                {
+                    clerkId: u.id,
+                    email,
+                    fullName,
+                    profilePic: u.image_url,
+                },
+                {
+                    new: true,
+                    upsert: true,
+                    setDefaultsOnInsert: true,
+                }
             );
+
+            console.log("User saved to MongoDB");
         }
+
         if (evt.type === "user.deleted") {
-            if (evt.data.id) await User.findOneAndDelete({ clerkId: evt.data.id });
+            if (evt.data.id) {
+                await User.findOneAndDelete({
+                    clerkId: evt.data.id,
+                });
+
+                console.log("🗑️ User deleted from MongoDB");
+            }
         }
-        res.status(200).json({ received: true });
+
+        return res.status(200).json({
+            received: true,
+        });
+
     } catch (error) {
-        console.error("Error in Clerk webhook", error);
-        res.status(400).json({ message: "webhook verification failed" });
-        
+        console.error(" Error in Clerk webhook:", error);
+
+        return res.status(400).json({
+            message: "Webhook verification failed",
+        });
     }
-
 });
-export default router; 
 
+export default router;
+```

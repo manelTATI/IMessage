@@ -44,6 +44,9 @@ RUN npm install --omit=dev --no-audit --no-fund
 COPY --from=backend-build /app/Backend/dist ./dist
 COPY --from=frontend-build /app/Frontend/dist ./public
 
+RUN ls -la ./dist
+RUN ls -la ./dist/webhooks
+
 EXPOSE 3001
 
 USER node
