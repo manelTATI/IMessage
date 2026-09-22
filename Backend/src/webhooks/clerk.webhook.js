@@ -1,4 +1,3 @@
-js
 import express from "express";
 import User from "../models/user.model.js";
 import { verifyWebhook } from "@clerk/backend/webhooks";
@@ -37,7 +36,7 @@ router.post("/", async (req, res) => {
             signingSecret,
         });
 
-        console.log("✅ Clerk webhook verified:", evt.type);
+        console.log("Clerk webhook verified:", evt.type);
 
         if (
             evt.type === "user.created" ||
