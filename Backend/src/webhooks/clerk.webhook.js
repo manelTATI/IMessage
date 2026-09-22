@@ -1,4 +1,4 @@
-```js
+js
 import express from "express";
 import User from "../models/user.model.js";
 import { verifyWebhook } from "@clerk/backend/webhooks";
@@ -86,7 +86,7 @@ router.post("/", async (req, res) => {
                     clerkId: evt.data.id,
                 });
 
-                console.log("🗑️ User deleted from MongoDB");
+                console.log(" User deleted from MongoDB");
             }
         }
 
@@ -104,4 +104,4 @@ router.post("/", async (req, res) => {
 });
 
 export default router;
-```
+
