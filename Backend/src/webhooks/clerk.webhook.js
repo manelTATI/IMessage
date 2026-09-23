@@ -5,41 +5,57 @@ import { verifyWebhook } from "@clerk/backend/webhooks";
 const router = express.Router();
 
 router.post("/", async (req, res) => {
-    try {
-        console.log("CLERK WEBHOOK RECEIVED: POST /api/webhooks/clerk");
+    console.log("--------------------------------------------------");
+    console.log("CLERK WEBHOOK RECEIVED: POST /api/webhooks/clerk");
+    console.log("Content-Type:", req.headers["content-type"]);
+    console.log("Svix Headers:", {
+        "svix-id": req.headers["svix-id"] || "MISSING",
+        "svix-timestamp": req.headers["svix-timestamp"] || "MISSING",
+        "svix-signature": req.headers["svix-signature"] ? "PRESENT" : "MISSING",
+    });
 
-        const signingSecret =
-            process.env.CLERK_WEBHOOK_SIGNING_SECRET ||
-            process.env.CLERK_WEBHOOK_SINGING_SECRET;
+    const signingSecret =
+        process.env.CLERK_WEBHOOK_SIGNING_SECRET ||
+        process.env.CLERK_WEBHOOK_SINGING_SECRET;
 
-        if (!signingSecret) {
-            console.error("Webhook secret is missing: CLERK_WEBHOOK_SIGNING_SECRET");
-            return res.status(500).json({
-                message: "Webhook signing secret is not configured",
-            });
-        }
-
-        // Ensure Express req satisfies the Web Request interface expected by verifyWebhook
-        if (typeof req.headers?.get !== "function") {
-            req.headers.get = (name) => {
-                const val = req.headers[name.toLowerCase()];
-                return Array.isArray(val) ? val.join(", ") : (val ?? null);
-            };
-        }
-        if (typeof req.text !== "function") {
-            req.text = async () =>
-                Buffer.isBuffer(req.body)
-                    ? req.body.toString("utf8")
-                    : (req.body || "");
-        }
-
-        // Verify Clerk webhook signature using Clerk's verifyWebhook
-        const evt = await verifyWebhook(req, {
-            signingSecret,
+    if (!signingSecret) {
+        console.error("FATAL: Webhook signing secret is missing from environment: CLERK_WEBHOOK_SIGNING_SECRET");
+        return res.status(500).json({
+            message: "Webhook signing secret is not configured in .env",
         });
+    }
 
-        console.log("Clerk webhook verified successfully. Event type:", evt.type);
+    // Ensure Express req satisfies the Web Request interface expected by verifyWebhook
+    if (typeof req.headers?.get !== "function") {
+        req.headers.get = (name) => {
+            const val = req.headers[name.toLowerCase()];
+            return Array.isArray(val) ? val.join(", ") : (val ?? null);
+        };
+    }
+    if (typeof req.text !== "function") {
+        req.text = async () =>
+            Buffer.isBuffer(req.body)
+                ? req.body.toString("utf8")
+                : (req.body || "");
+    }
 
+    let evt;
+    try {
+        // Step 1: Verify the webhook signature
+        evt = await verifyWebhook(req, {
+            signingSecret: signingSecret.trim(),
+        });
+        console.log("Clerk webhook signature VERIFIED successfully. Event type:", evt.type);
+    } catch (verifyError) {
+        console.error("Webhook signature verification FAILED:", verifyError.message || verifyError);
+        return res.status(400).json({
+            message: "Webhook verification failed",
+            error: verifyError.message || "Invalid webhook signature or missing svix headers",
+        });
+    }
+
+    // Step 2: Handle verified events
+    try {
         if (evt.type === "user.created") {
             const u = evt.data;
 
@@ -48,21 +64,15 @@ router.post("/", async (req, res) => {
             const firstName = u.first_name || "";
             const lastName = u.last_name || "";
 
-            // Safely find the primary email
+            // Safely extract primary email address
             const email =
                 u.email_addresses?.find(
                     (e) => e.id === u.primary_email_address_id
                 )?.email_address ||
-                u.email_addresses?.[0]?.email_address;
+                u.email_addresses?.[0]?.email_address ||
+                (u.username ? `${u.username}@clerk.user` : `${clerkId}@clerk.user`);
 
-            if (!email) {
-                console.error(`User ${clerkId} has no primary email address.`);
-                return res.status(400).json({
-                    message: "User has no primary email address",
-                });
-            }
-
-            // Derive fullName matching the schema (fullName is required in user.model.js)
+            // Derive fullName matching the schema
             const fullName =
                 [firstName, lastName].filter(Boolean).join(" ").trim() ||
                 u.username ||
@@ -75,7 +85,6 @@ router.post("/", async (req, res) => {
 
             // Check whether a user with the same Clerk ID already exists
             const existingUser = await User.findOne({ clerkId });
-
             if (existingUser) {
                 console.log(`User with clerkId ${clerkId} already exists in MongoDB.`);
                 return res.status(200).json({
@@ -111,7 +120,7 @@ router.post("/", async (req, res) => {
             } catch (createError) {
                 // Handle duplicate key race conditions (code 11000) gracefully
                 if (createError.code === 11000) {
-                    console.log(`Duplicate key error 11000 for clerkId ${clerkId} (handled idempotently)`);
+                    console.log(`Duplicate key (11000) for clerkId ${clerkId} (handled idempotently)`);
                     return res.status(200).json({
                         message: "User already exists",
                         received: true,
@@ -180,13 +189,14 @@ router.post("/", async (req, res) => {
 
         // Return HTTP 200 for any other event types sent by Clerk
         return res.status(200).json({
+            message: `Event ${evt.type} received`,
             received: true,
         });
-    } catch (error) {
-        console.error("Error in Clerk webhook:", error?.message || error);
-
-        return res.status(400).json({
-            message: "Webhook verification failed",
+    } catch (processError) {
+        console.error("Error processing Clerk webhook payload:", processError);
+        return res.status(500).json({
+            message: "Webhook payload processing failed",
+            error: processError.message || "Internal database or server error",
         });
     }
 });

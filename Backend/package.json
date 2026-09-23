@@ -6,7 +6,8 @@
   "scripts": {
     "build": "node -e \"const fs=require('fs'); fs.rmSync('dist',{recursive:true,force:true}); fs.cpSync('src','dist',{recursive:true})\"",
     "dev": "node --watch src/server.js",
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "test:webhook": "node scripts/test-webhook.js"
   },
   "keywords": [],
   "author": "",
