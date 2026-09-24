@@ -3,6 +3,9 @@ import User from "../models/user.model.js";
 import { verifyWebhook } from "@clerk/backend/webhooks";
 
 const router = express.Router();
+router.get("/", (req, res) => {
+    res.send("Clerk webhook route is working");
+});
 
 router.post("/", async (req, res) => {
     try {
