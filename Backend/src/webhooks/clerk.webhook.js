@@ -1,89 +1,68 @@
 import express from "express";
 import User from "../models/user.model.js";
-import { verifyWebhook } from "@clerk/backend/webhooks";
+import { verifyWebhook } from "@clerk/express/webhooks";
 
 const router = express.Router();
+
 router.get("/", (req, res) => {
     res.send("Clerk webhook route is working");
 });
-router.post("/", async (req, res) => {
+
+router.post("/", express.raw({ type: "application/json" }), async (req, res) => {
+    let evt;
+
+  // 1. Verification
     try {
-        // Verify Clerk webhook
-        const evt = await verifyWebhook(req, {
+        evt = await verifyWebhook(req, {
             signingSecret: process.env.CLERK_WEBHOOK_SIGNING_SECRET,
-        });
+    });
+} catch (error) {
+    console.error("Webhook verification failed:", error.message);
+    return res.status(400).json({ message: "Webhook verification failed" });
+}
 
-        console.log("Clerk webhook received:", evt.type);
 
-        // Only handle new users
-        if (evt.type !== "user.created") {
-            return res.status(200).json({
-                message: "Event ignored",
-            });
-        }
+console.log("Clerk webhook received:", evt.type);
 
-        const user = evt.data;
+    if (evt.type !== "user.created") {
+    return res.status(200).json({ message: "Event ignored" });
+}
 
-        // Get user data from Clerk
-        const clerkId = user.id;
+  // 2. Save user
+    try {
+    const user = evt.data;
+    const clerkId = user.id;
 
         const email =
-            user.email_addresses?.find(
-                (email) => email.id === user.primary_email_address_id
-            )?.email_address ||
-            user.email_addresses?.[0]?.email_address;
+            user.email_addresses?.find((e) => e.id === user.primary_email_address_id)
+        ?.email_address || user.email_addresses?.[0]?.email_address;
 
-        const fullName =
-            [user.first_name, user.last_name]
-                .filter(Boolean)
-                .join(" ") ||
-            user.username ||
-            "Clerk User";
 
-        const profilePic = user.image_url || "";
+     const fullName =
+      [user.first_name, user.last_name].filter(Boolean).join(" ") ||
+      user.username ||
+      "Clerk User";
 
-        // Make sure email exists
-        if (!email) {
-            console.error("No email found for Clerk user:", clerkId);
+    const profilePic = user.image_url || "";
 
-            return res.status(400).json({
-                message: "No email found",
-            });
-        }
-
-        // Check if user already exists
-        const existingUser = await User.findOne({ clerkId });
-
-        if (existingUser) {
-            console.log("User already exists:", clerkId);
-
-            return res.status(200).json({
-                message: "User already exists",
-            });
-        }
-
-        // Create user in MongoDB
-        const newUser = await User.create({
-            clerkId,
-            email,
-            fullName,
-            profilePic,
-        });
-
-        console.log("User created in MongoDB:", newUser._id);
-
-        return res.status(200).json({
-            message: "User created successfully",
-        });
-
-    } catch (error) {
-        console.error("Clerk webhook error:", error);
-
-        return res.status(400).json({
-            message: "Webhook failed",
-            error: error.message,
-        });
+    if (!email) {
+      console.error("No email found for Clerk user:", clerkId);
+      return res.status(200).json({ message: "No email, skipped" });
     }
+
+      await User.findOneAndUpdate(
+
+          { clerkId },
+      { $setOnInsert: { clerkId, email, fullName, profilePic } },
+      { upsert: true }
+    );
+
+    console.log("User saved in MongoDB:", clerkId);
+    return res.status(200).json({ message: "User created successfully" });
+  } catch (error) {
+    console.error("Database error:", error);
+    return res.status(500).json({ message: "Internal error" });
+  }
 });
 
 export default router;
