@@ -1,54 +1,42 @@
-# --- Stage 1: Build Frontend ---
-FROM node:22-bookworm-slim AS frontend-build
+# Monolith: Vite frontend + Express API. Build from repo root.
 
+# --- Stage 1: build the SPA (Vite) ---
+# Produces static HTML/JS/CSS under frontend/dist.
+FROM node:22-bookworm-slim AS Frontend-build
 WORKDIR /app/Frontend
-
 COPY Frontend/package.json Frontend/package-lock.json ./
 RUN npm install --no-audit --no-fund --legacy-peer-deps
-
 COPY Frontend/ ./
-
+# Empty = browser calls /api on the same host as the page.
 ENV VITE_API_URL=
-
+# Public Clerk key is embedded in client JS.
 ARG VITE_CLERK_PUBLISHABLE_KEY
 ENV VITE_CLERK_PUBLISHABLE_KEY=$VITE_CLERK_PUBLISHABLE_KEY
-
 RUN npm run build
 
-
-# --- Stage 2: Build Backend ---
-FROM node:22-bookworm-slim AS backend-build
-
-WORKDIR /app/Backend
-
+# --- Stage 2: build the API bundle ---
+# This backend is ESM JavaScript, so npm run build copies src/ to dist/.
+FROM node:22-bookworm-slim AS Backend-build
+WORKDIR /app
 COPY Backend/package.json Backend/package-lock.json ./
 RUN npm install --no-audit --no-fund
-
 COPY Backend/ ./
-
 RUN npm run build
 
-
-# --- Stage 3: Production ---
+# --- Stage 3: runtime image (only prod deps + built assets) ---
+# Express serves API routes and static files from public/.
 FROM node:22-bookworm-slim AS runner
-
 WORKDIR /app
-
 ENV NODE_ENV=production
 ENV PORT=3001
 
 COPY Backend/package.json Backend/package-lock.json ./
+RUN npm install --omit=dev --no-audit --no-fund && npm cache clean --force
 
-RUN npm install --omit=dev --no-audit --no-fund
-
-COPY --from=backend-build /app/Backend/dist ./dist
+COPY --from=Backend-build /app/dist ./dist
 COPY --from=frontend-build /app/Frontend/dist ./public
 
-RUN ls -la ./dist
-RUN ls -la ./dist/webhooks
-
 EXPOSE 3001
-
 USER node
 
 CMD ["node", "dist/server.js"]
