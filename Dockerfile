@@ -14,6 +14,8 @@ ARG VITE_CLERK_PUBLISHABLE_KEY
 ENV VITE_CLERK_PUBLISHABLE_KEY=$VITE_CLERK_PUBLISHABLE_KEY
 RUN npm run build
 
+
+
 # --- Stage 2: build the API bundle ---
 # This backend is ESM JavaScript, so npm run build copies src/ to dist/.
 FROM node:22-bookworm-slim AS Backend-build
