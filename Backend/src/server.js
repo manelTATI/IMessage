@@ -12,7 +12,8 @@ import clerkWebhook from "./webhooks/clerk.webhook.js";
 
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+
+const PORT = process.env.PORT;
 const FRONTEND_URL = process.env.FRONTEND_URL;
 
 const publicDir = path.join(process.cwd(), "public");
