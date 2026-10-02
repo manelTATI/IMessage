@@ -1,12 +1,13 @@
 
 import express from "express";
 import User from "../models/User.js";
-import { verifyWebhook } from "@clerk/backend/webhooks";
+import { verifyWebhook } from "@clerk/express/webhooks";
 const router = express.Router();
 router.post("/", async (req, res) => {
     try {
         const signingSecret = process.env.CLERK_WEBHOOK_SIGNING_SECRET;
     if (!signingSecret) {
+        
         return res.status(500).json({ error: "Signing secret not configured" });
     }
     const playload = Buffer.isBuffer(req.body) ? req.body.toString("utf-8") : String(req.body);
